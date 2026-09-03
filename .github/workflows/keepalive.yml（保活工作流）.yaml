@@ -1,0 +1,36 @@
+# ============================================================
+# 保活工作流：定期向仓库提交空 commit，让仓库保持"有活动"状态，
+# 从而阻止 GitHub 自动禁用所有 scheduled（定时）工作流。
+#
+# 原理：GitHub 会在仓库连续 60 天无活动时自动禁用定时工作流。
+#       本工作流每月 1 号、15 号各提交一次空 commit（也算 push 活动），
+#       把"无活动计时器"重置，run.yml 签到任务就不会再被停。
+#
+# 使用：把本文件放到仓库 .github/workflows/ 目录并提交即可。
+# ============================================================
+name: Keepalive
+
+on:
+  schedule:
+    # 每月 1 号、15 号 UTC 02:00 执行（北京时间 10:00）
+    - cron: '0 2 1,15 * *'
+  workflow_dispatch: # 支持在 Actions 页面手动触发，立即生效
+
+permissions:
+  contents: write # 允许推送空 commit
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Push empty commit to keep repo active
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 提交一个空 commit；若仓库有其他人改动导致 push 失败，下次还会再试
+          git commit --allow-empty -m "chore: keepalive $(date -u +'%Y-%m-%d %H:%M:%S')" || true
+          git pull --rebase origin main 2>/dev/null || true
+          git push origin HEAD:main 2>/dev/null && echo "keepalive push OK" || echo "push failed, will retry next time"
